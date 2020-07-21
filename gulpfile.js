@@ -42,6 +42,8 @@ var webpackStream = require("webpack-stream");
 var Vinyl = require("vinyl");
 var vfs = require("vinyl-fs");
 var through = require("through2");
+var ts = require("gulp-typescript");
+var tsProject = ts.createProject("tsconfig.json", { typescript: require("typescript") });
 
 var BUILD_DIR = "build/";
 var L10N_DIR = "l10n/";
@@ -66,9 +68,6 @@ var DIST_DIR = BUILD_DIR + "dist/";
 var TYPES_BUILD_DIR = BUILD_DIR + "types/";
 var COMMON_WEB_FILES = ["web/images/*.{png,svg,gif,cur}", "web/debugger.js"];
 var MOZCENTRAL_DIFF_FILE = "mozcentral.diff";
-
-// This is either `tsc` or `jsdoc`
-var TYPES_INT = "tsc";
 
 var REPO = "git@github.com:mozilla/pdf.js.git";
 var DIST_REPO_URL = "https://github.com/mozilla/pdfjs-dist";
@@ -1147,34 +1146,11 @@ gulp.task("jsdoc", function (done) {
 
 gulp.task("types", function (done) {
   console.log();
-  console.log("### Generating typescript definitions using " + TYPES_INT);
+  console.log("### Generating typescript definitions using gulp-typescript");
 
-  if (TYPES_INT === "tsc") {
-    var args = [
-      "target ES2020",
-      "allowJS",
-      "declaration",
-      `outDir ${TYPES_BUILD_DIR}`,
-      "strict",
-      "esModuleInterop",
-      "forceConsistentCasingInFileNames",
-      "emitDeclarationOnly",
-    ].join(" --");
-    exec(`tsc --${args} src/pdf.js`, done);
-  } else {
-    var JSDOC_FILES = ["src/display/api.js", "src/shared/util.js"];
-
-    rimraf(TYPES_BUILD_DIR, function () {
-      mkdirp(TYPES_BUILD_DIR).then(function () {
-        var command =
-          '"node_modules/.bin/jsdoc" -t node_modules/tsd-jsdoc/dist -d ' +
-          TYPES_BUILD_DIR +
-          " " +
-          JSDOC_FILES.join(" ");
-        exec(command, done);
-      });
-    });
-  }
+  return tsProject.src()
+    .pipe(tsProject())
+    .pipe(gulp.dest(TYPES_BUILD_DIR));
 });
 
 function buildLib(defines, dir) {
@@ -1684,18 +1660,6 @@ gulp.task(
         JSON.stringify(bowerManifest, null, 2)
       );
 
-      var gulpType;
-      if (TYPES_INT === "tsc") {
-        gulpType = gulp
-          .src(TYPES_BUILD_DIR + "**/**")
-          .pipe(gulp.dest(DIST_DIR + "build/"));
-      } else {
-        gulpType = gulp
-          .src(TYPES_BUILD_DIR + "types.d.ts")
-          .pipe(rename("pdf.d.ts"))
-          .pipe(gulp.dest(DIST_DIR + "build/"));
-      }
-
       return merge([
         packageJsonSrc.pipe(gulp.dest(DIST_DIR)),
         bowerJsonSrc.pipe(gulp.dest(DIST_DIR)),
@@ -1748,7 +1712,9 @@ gulp.task(
         gulp
           .src(LIB_DIR + "**/*", { base: LIB_DIR })
           .pipe(gulp.dest(DIST_DIR + "lib/")),
-        gulpType,
+        gulp
+          .src(TYPES_BUILD_DIR + "**/**")
+          .pipe(gulp.dest(DIST_DIR + "build/")),
       ]);
     }
   )
